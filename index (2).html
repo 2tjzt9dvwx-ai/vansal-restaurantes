@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sistema de Reparto - Tacos Beto</title>
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+
+<style>
+    body {
+        margin: 0;
+        font-family: 'Roboto', sans-serif;
+        background: linear-gradient(to bottom, #000000, #39ff14);
+        color: #fff;
+    }
+
+    header {
+        background-color: #39ff14;
+        color: #000;
+        padding: 15px;
+        text-align: center;
+        font-size: 2em;
+        font-weight: 700;
+        letter-spacing: 1px;
+    }
+
+    main {
+        display: flex;
+        justify-content: center;
+        margin-top: 20px;
+        gap: 20px;
+        flex-wrap: wrap;
+    }
+
+    .form-container {
+        background: rgba(0,0,0,0.7);
+        padding: 20px;
+        border-radius: 10px;
+        width: 400px;
+    }
+
+    label {
+        display: block;
+        margin-top: 10px;
+        font-weight: 500;
+    }
+
+    input, select, textarea {
+        width: 100%;
+        padding: 8px;
+        margin-top: 5px;
+        border-radius: 5px;
+        border: none;
+    }
+
+    .top-buttons {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 20px;
+    }
+
+    .top-buttons button {
+        padding: 10px;
+        font-size: 0.9em;
+        border-radius: 10px;
+        border: none;
+        cursor: pointer;
+        flex: 1;
+        margin-right: 5px;
+        transition: 0.2s;
+    }
+
+    .top-buttons button:last-child {
+        margin-right: 0;
+    }
+
+    .btn-disponible {
+        background-color: #39ff14;
+        color: #000;
+    }
+
+    .btn-disponible:hover {
+        background-color: #00cc00;
+    }
+
+    .btn-liberar {
+        background-color: #ff3b3b;
+        color: white;
+    }
+
+    .btn-liberar:hover {
+        background-color: #b71c1c;
+    }
+
+    .pedido {
+        margin-top: 15px;
+        background-color: rgba(0,0,0,0.6);
+        padding: 10px;
+        border-radius: 10px;
+        border-left: 5px solid #39ff14;
+    }
+
+    .pedido-cancelado {
+        border-left: 5px solid red;
+        opacity: 0.7;
+    }
+
+    #map {
+        width: 600px;
+        height: 500px;
+        border-radius: 10px;
+        border: 3px solid #39ff14;
+    }
+
+    .btn-cancelar {
+        margin-top: 10px;
+        background-color: #ff9900;
+        color: #000;
+        border-radius: 5px;
+        padding: 5px 10px;
+        cursor: pointer;
+        border: none;
+        transition: 0.2s;
+    }
+
+    .btn-cancelar:hover {
+        background-color: #cc7700;
+    }
+</style>
+</head>
+<body>
+
+<header>Sistema de Reparto - Tacos Beto</header>
+
+<main>
+    <div class="form-container">
+        <div class="top-buttons">
+            <button class="btn-disponible" onclick="guardarPedido()">Guardar Pedido</button>
+            <button class="btn-liberar" onclick="liberarPedidos()">Liberar Pedidos</button>
+        </div>
+
+        <label>Nombre del cliente:</label>
+        <input type="text" id="nombre">
+
+        <label>Número de teléfono:</label>
+        <input type="text" id="telefono">
+
+        <label>Dirección completa:</label>
+        <input type="text" id="direccion" placeholder="Ejemplo: Calle 123, Monclova, Coahuila">
+
+        <label>Repartidor asignado:</label>
+        <input type="text" id="repartidor">
+
+        <label>Tiempo estimado (minutos):</label>
+        <input type="number" id="tiempo">
+
+        <label>Descripción del pedido:</label>
+        <textarea id="descripcion" rows="3" placeholder="Ej. 2 tacos al pastor"></textarea>
+
+        <div id="pedidos-guardados"></div>
+    </div>
+
+    <div id="map"></div>
+</main>
+
+<!-- ✅ Firebase SDK (REALTIME DATABASE COMPAT) -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+
+<script>
+  // ✅ Configuración Firebase correcta del restaurante
+  const firebaseConfig = {
+    apiKey: "AIzaSyA8YJ51ropDB_nnqKbRckY7KPSHI-UmLNg",
+    authDomain: "tacos-beto-reparto-2.firebaseapp.com",
+    databaseURL: "https://tacos-beto-reparto-2-default-rtdb.firebaseio.com",
+    projectId: "tacos-beto-reparto-2",
+    storageBucket: "tacos-beto-reparto-2.firebasestorage.app",
+    messagingSenderId: "674163235603",
+    appId: "1:674163235603:web:ecd8f00cff086101a718e6"
+  };
+
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.database();
+
+  let autocomplete;
+  let map;
+  let marker;
+
+  const restauranteCoords = {
+      lat: 26.915421442985,
+      lng: -101.42286954528603
+  };
+
+  function initAutocomplete() {
+      autocomplete = new google.maps.places.Autocomplete(
+          document.getElementById("direccion"),
+          { types: ['geocode'], componentRestrictions: { country: "mx" } }
+      );
+
+      map = new google.maps.Map(document.getElementById("map"), {
+          center: restauranteCoords,
+          zoom: 13
+      });
+
+      marker = new google.maps.Marker({
+          position: restauranteCoords,
+          map: map,
+          title: "Tacos Beto"
+      });
+
+      autocomplete.addListener('place_changed', function() {
+          const place = autocomplete.getPlace();
+          if (!place.geometry) return;
+
+          const location = place.geometry.location;
+          map.setCenter(location);
+          map.setZoom(15);
+
+          if (marker) marker.setMap(null);
+          marker = new google.maps.Marker({ position: location, map: map });
+      });
+  }
+
+  function calcularCosto(distancia) {
+      const tarifaBase = 40;
+      if (distancia <= 4) return tarifaBase;
+      return tarifaBase + (distancia - 4) * 10;
+  }
+
+  function obtenerDistancia(coordsDestino) {
+      const R = 6371;
+      const dLat = (coordsDestino.lat - restauranteCoords.lat) * Math.PI / 180;
+      const dLng = (coordsDestino.lng - restauranteCoords.lng) * Math.PI / 180;
+
+      const a = Math.sin(dLat/2)**2 +
+          Math.cos(restauranteCoords.lat*Math.PI/180) *
+          Math.cos(coordsDestino.lat*Math.PI/180) *
+          Math.sin(dLng/2)**2;
+
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      return R * c;
+  }
+
+  function guardarPedido() {
+      const nombre = document.getElementById("nombre").value;
+      const telefono = document.getElementById("telefono").value;
+      const direccionInput = document.getElementById("direccion").value;
+      const repartidor = document.getElementById("repartidor").value;
+      const tiempo = document.getElementById("tiempo").value;
+      const descripcion = document.getElementById("descripcion").value;
+
+      if (!nombre || !telefono || !direccionInput || !repartidor || !tiempo || !descripcion) {
+          alert("⚠️ Completa todos los campos antes de guardar.");
+          return;
+      }
+
+      const place = autocomplete.getPlace();
+      if (!place || !place.geometry) {
+          alert("⚠️ Selecciona una dirección válida del menú.");
+          return;
+      }
+
+      const coordsDestino = place.geometry.location.toJSON();
+      const distancia = obtenerDistancia(coordsDestino).toFixed(2);
+      const costo = calcularCosto(distancia);
+
+      const pedido = {
+          nombre, telefono,
+          direccion: direccionInput,
+          repartidor, tiempo,
+          descripcion, distancia, costo,
+          fecha: new Date().toLocaleString(),
+          estado: "Pendiente"
+      };
+
+      db.ref('pedidos').push(pedido, error => {
+          if (error) alert("Error al guardar: " + error);
+          else {
+              alert(`✅ Pedido guardado. Distancia: ${distancia} km | Costo: $${costo}`);
+              limpiarFormulario();
+          }
+      });
+  }
+
+  function mostrarPedidos() {
+      const div = document.getElementById("pedidos-guardados");
+      div.innerHTML = "<h3>Pedidos guardados:</h3>";
+
+      db.ref('pedidos').on('value', snapshot => {
+          const pedidos = snapshot.val();
+          div.innerHTML = "<h3>Pedidos guardados:</h3>";
+
+          for (let id in pedidos) {
+              const p = pedidos[id];
+
+              div.innerHTML += `
+                  <div class="pedido ${p.estado === 'Cancelado' ? 'pedido-cancelado' : ''}" id="${id}">
+                      <strong>Cliente:</strong> ${p.nombre}<br>
+                      <strong>Teléfono:</strong> ${p.telefono}<br>
+                      <strong>Dirección:</strong> ${p.direccion}<br>
+                      <strong>Repartidor:</strong> ${p.repartidor}<br>
+                      <strong>Tiempo:</strong> ${p.tiempo} min<br>
+                      <strong>Distancia:</strong> ${p.distancia} km<br>
+                      <strong>Costo:</strong> $${p.costo}<br>
+                      <strong>Descripción:</strong> ${p.descripcion}<br>
+                      <strong>Fecha:</strong> ${p.fecha}<br>
+                      <button class="btn-cancelar" onclick="cancelarPedido('${id}')">Pedido cancelado</button>
+                  </div>
+              `;
+          }
+      });
+  }
+
+  function cancelarPedido(id) {
+      db.ref('pedidos/' + id).update({ estado: "Cancelado" });
+  }
+
+  function liberarPedidos() {
+      if (confirm("¿Seguro que quieres liberar todos los pedidos?")) {
+          db.ref('pedidos').remove();
+      }
+  }
+
+  function limpiarFormulario() {
+      document.getElementById("nombre").value = "";
+      document.getElementById("telefono").value = "";
+      document.getElementById("direccion").value = "";
+      document.getElementById("repartidor").value = "";
+      document.getElementById("tiempo").value = "";
+      document.getElementById("descripcion").value = "";
+  }
+
+  window.onload = mostrarPedidos;
+</script>
+
+<!-- ✅ Google Maps API -->
+<script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBxZKiEtDPP8foVExaLezIRI-Ak2fNj0mg&libraries=places&callback=initAutocomplete" async defer></script>
+
+</body>
+</html>
+
+
